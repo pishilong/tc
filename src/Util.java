@@ -1,5 +1,7 @@
 import weka.core.*;
 import weka.core.converters.TextDirectoryLoader;
+import weka.core.stopwords.StopwordsHandler;
+import weka.core.stopwords.WordsFromFile;
 import weka.filters.Filter;
 import weka.filters.unsupervised.attribute.StringToWordVector;
 
@@ -80,7 +82,7 @@ public class Util {
         File resultDirectory = new File(datasetPath + directoryName + "_weka");
 
         if(resultDirectory.exists()){
-            System.out.print("数据集已转换为weka格式，跳过");
+            System.out.println("数据集已转换为weka格式，跳过");
             return resultDirectory;
         }
         resultDirectory.mkdir();
@@ -88,7 +90,7 @@ public class Util {
         //读取label文件，获取每个文档的ID，及其对应的类型
         File labelFile = new File(datasetPath + directoryName + ".doc.label");
         if(!labelFile.exists()){
-            System.out.print("标签文件不存在");
+            System.out.println("标签文件不存在");
             return null;
         }
 
@@ -115,36 +117,32 @@ public class Util {
 
     }
 
-    /*
-     *数据预处理
-     * 1.转换为weka需要的结构
-     * 2.weka加载
-     * 3.weka转换为向量空间
-      */
-    public static Instances preProcess(File rawDirectory) throws Exception{
+    public static Instances getWekaInstances(File rawDir) throws Exception{
         //重新组织数据集目录
-        File trainDir = refactorDataDirector(rawDirectory);
+        File dataDir = refactorDataDirector(rawDir);
 
-        // weka加载数据集合
+        //weka装载数据
+        Instances result;
         TextDirectoryLoader loader = new TextDirectoryLoader();
-        loader.setDirectory(trainDir);
-        Instances dataRaw = loader.getDataSet();
-        //System.out.println("\n\nImported data:\n\n" + dataRaw);
+        loader.setDirectory(dataDir);
+        result = loader.getDataSet();
+        return result;
+    }
 
+    public static StringToWordVector getIDFFilter() {
         // 把文本映射到向量空间
         StringToWordVector filter = new StringToWordVector();
-        filter.setInputFormat(dataRaw);
         filter.setIDFTransform(true);
         filter.setTFTransform(false);
         filter.setWordsToKeep(1000);
         filter.setDoNotOperateOnPerClassBasis(true);
-        //filter.setOutputWordCounts(true);
+        filter.setOutputWordCounts(true);
         filter.setNormalizeDocLength(new SelectedTag(StringToWordVector.FILTER_NORMALIZE_ALL, StringToWordVector.TAGS_FILTER));
-        filter.setStopwords(new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt"));
-        Instances dataFiltered = Filter.useFilter(dataRaw, filter);
-        System.out.println("\n\nFiltered data:\n\n" + dataFiltered);
-
-        return dataFiltered;
+        File stopWordFile = new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt");
+        WordsFromFile stopwordsHandler = new WordsFromFile();
+        stopwordsHandler.setStopwords(stopWordFile);
+        filter.setStopwordsHandler(stopwordsHandler);
+        return filter;
     }
 
     public static void main(String[] args) throws Exception {
