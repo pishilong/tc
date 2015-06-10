@@ -1,3 +1,8 @@
+import weka.core.*;
+import weka.core.converters.TextDirectoryLoader;
+import weka.filters.Filter;
+import weka.filters.unsupervised.attribute.StringToWordVector;
+
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +40,7 @@ public class Util {
     * Map<DocumentID, LabelID>
     * */
     public static Map<Integer, Integer> loadLabelFile(File labelFile) throws FileNotFoundException{
+        System.out.print("加载标签文件" + labelFile.getName());
         Map<Integer, Integer> labelInfo = new HashMap<Integer, Integer>();
         BufferedReader reader = new BufferedReader(new FileReader(labelFile));
         String tempString = null;
@@ -59,7 +65,14 @@ public class Util {
         return labelInfo;
     }
 
-    public static void refactorDataDirector(File rawDirectory) throws Exception{
+    /*
+    Weka需要的组织形式为
+            Directory
+    Class 1(Subdirectory)
+    File 1
+    File 2
+      */
+    public static File refactorDataDirector(File rawDirectory) throws Exception{
         String directoryName = rawDirectory.getName();
         String datasetPath = "/Users/pishilong/Workspace/tc/dataset/";
         Map<Integer, Integer> labelInfo;
@@ -67,7 +80,8 @@ public class Util {
         File resultDirectory = new File(datasetPath + directoryName + "_weka");
 
         if(resultDirectory.exists()){
-            resultDirectory.delete();
+            System.out.print("数据集已转换为weka格式，跳过");
+            return resultDirectory;
         }
         resultDirectory.mkdir();
 
@@ -75,8 +89,10 @@ public class Util {
         File labelFile = new File(datasetPath + directoryName + ".doc.label");
         if(!labelFile.exists()){
             System.out.print("标签文件不存在");
-            return ;
+            return null;
         }
+
+        System.out.print("开始转换" + directoryName + "为weka格式");
 
         labelInfo = loadLabelFile(labelFile);
 
@@ -94,6 +110,41 @@ public class Util {
             fileCopy(file, newFile);
         }
 
+        System.out.print(directoryName + "数据转换结束，一共" + dataFiles.length + "个文件");
+        return resultDirectory;
+
+    }
+
+    /*
+     *数据预处理
+     * 1.转换为weka需要的结构
+     * 2.weka加载
+     * 3.weka转换为向量空间
+      */
+    public static Instances preProcess(File rawDirectory) throws Exception{
+        //重新组织数据集目录
+        File trainDir = refactorDataDirector(rawDirectory);
+
+        // weka加载数据集合
+        TextDirectoryLoader loader = new TextDirectoryLoader();
+        loader.setDirectory(trainDir);
+        Instances dataRaw = loader.getDataSet();
+        //System.out.println("\n\nImported data:\n\n" + dataRaw);
+
+        // 把文本映射到向量空间
+        StringToWordVector filter = new StringToWordVector();
+        filter.setInputFormat(dataRaw);
+        filter.setIDFTransform(true);
+        filter.setTFTransform(false);
+        filter.setWordsToKeep(1000);
+        filter.setDoNotOperateOnPerClassBasis(true);
+        //filter.setOutputWordCounts(true);
+        filter.setNormalizeDocLength(new SelectedTag(StringToWordVector.FILTER_NORMALIZE_ALL, StringToWordVector.TAGS_FILTER));
+        filter.setStopwords(new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt"));
+        Instances dataFiltered = Filter.useFilter(dataRaw, filter);
+        System.out.println("\n\nFiltered data:\n\n" + dataFiltered);
+
+        return dataFiltered;
     }
 
     public static void main(String[] args) throws Exception {
