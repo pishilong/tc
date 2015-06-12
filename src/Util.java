@@ -1,9 +1,16 @@
+import weka.classifiers.Classifier;
+import weka.classifiers.UpdateableClassifier;
+import weka.classifiers.bayes.NaiveBayes;
+import weka.classifiers.functions.SMO;
+import weka.classifiers.lazy.IBk;
+import weka.classifiers.meta.FilteredClassifier;
+import weka.classifiers.meta.Vote;
 import weka.core.*;
 import weka.core.converters.TextDirectoryLoader;
-import weka.core.stopwords.StopwordsHandler;
-import weka.core.stopwords.WordsFromFile;
 import weka.filters.Filter;
 import weka.filters.unsupervised.attribute.StringToWordVector;
+import weka.core.stopwords.StopwordsHandler;
+import weka.core.stopwords.WordsFromFile;
 
 import java.io.*;
 import java.util.HashMap;
@@ -82,7 +89,7 @@ public class Util {
         File resultDirectory = new File(datasetPath + directoryName + "_weka");
 
         if(resultDirectory.exists()){
-            System.out.println("数据集已转换为weka格式，跳过");
+            System.out.println("数据集" + directoryName + "已转换为weka格式，跳过");
             return resultDirectory;
         }
         resultDirectory.mkdir();
@@ -117,17 +124,17 @@ public class Util {
 
     }
 
-    public static Instances getWekaInstances(File rawDir) throws Exception{
-        //重新组织数据集目录
-        File dataDir = refactorDataDirector(rawDir);
-
+    public static Instances getWekaInstances(File dataDir) throws Exception{
+        System.out.println("把数据集" + dataDir.getName() + "转换为weka instances");
         //weka装载数据
         Instances result;
         TextDirectoryLoader loader = new TextDirectoryLoader();
         loader.setDirectory(dataDir);
         result = loader.getDataSet();
+
         return result;
     }
+
 
     public static StringToWordVector getIDFFilter() {
         // 把文本映射到向量空间
@@ -143,6 +150,100 @@ public class Util {
         stopwordsHandler.setStopwords(stopWordFile);
         filter.setStopwordsHandler(stopwordsHandler);
         return filter;
+    }
+
+    public static FilteredClassifier getClassifier(String modelName) throws Exception{
+        FilteredClassifier filteredClassifier = new FilteredClassifier();
+        filteredClassifier.setFilter(Util.getIDFFilter());
+
+
+        Classifier classifier;
+        switch(modelName){
+            case "knn":
+                classifier = new IBk(8);
+                break;
+            case "nb":
+                classifier = new NaiveBayes();
+                break;
+            case "svm":
+                classifier = new SMO();
+                break;
+            default:
+                classifier = new SMO();
+                break;
+        }
+
+        filteredClassifier.setClassifier(classifier);
+
+        return filteredClassifier;
+    }
+
+    // typeName : single, ensemble
+    // modelName : svm, "svm, knn..."
+    public static Classifier buildClassifier(String typeName, String modelName, Instances trainData, Instances extraData) throws Exception{
+        System.out.println("开始构建分类器:" + typeName + "\t" + modelName);
+        if(typeName == "single"){
+            Classifier classifier = getClassifier(modelName);
+            classifier = trainWithExtraData(classifier, trainData, extraData);
+            return classifier;
+        }else{
+            String[] modelNames = modelName.split(",");
+            Classifier[] cfsArray = new Classifier[modelNames.length];
+            int index = 0;
+            for(String name : modelNames){
+                cfsArray[index] = Util.getClassifier(name);
+                index ++ ;
+            }
+            Vote vote = new Vote();
+           /*
+            * 订制ensemble分类器的决策方式主要有：
+            * AVERAGE_RULE
+            * PRODUCT_RULE
+            * MAJORITY_VOTING_RULE
+            * MIN_RULE
+            * MAX_RULE
+            * MEDIAN_RULE
+            * 它们具体的工作方式，大家可以参考weka的说明文档。
+            * 在这里我们选择的是多数投票的决策规则
+            */
+            vote.setCombinationRule(new SelectedTag(Vote.MAJORITY_VOTING_RULE, Vote.TAGS_RULES));
+            vote.setClassifiers(cfsArray);
+            //设置随机数种子
+            vote.setSeed(2);
+            vote = (Vote)trainWithExtraData(vote, trainData, extraData);
+            //训练ensemble分类器
+            return vote;
+        }
+    }
+
+    public static Classifier trainWithExtraData(Classifier classifier, Instances trainData, Instances extraData) throws Exception {
+        System.out.println("开始训练初始分类器");
+        classifier.buildClassifier(trainData);
+        /* 每次都重新训练分类器
+        int index = 1;
+        for(Instance data : extraData){
+            double label = classifier.classifyInstance(data);
+            data.setClassValue(label);
+            trainData.add(data);
+            System.out.println("利用第" + index + "个无标数据的分类结果重新训练分类器");
+            classifier.buildClassifier(trainData);
+            index ++;
+        }
+        System.out.println("分类器训练完毕");
+        */
+        //只最后重新训练一次
+        int index = 1;
+        for(Instance data : extraData){
+            double label = classifier.classifyInstance(data);
+            data.setClassValue(label);
+            trainData.add(data);
+            //System.out.println("分类第" + index + "个无标数据，并将其加入训练数据中");
+            index ++;
+        }
+        System.out.println("无标数据分类完毕，并添加入训练数据中");
+        classifier.buildClassifier(trainData);
+        System.out.println("分类器重新训练完毕");
+        return classifier;
     }
 
     public static void main(String[] args) throws Exception {
