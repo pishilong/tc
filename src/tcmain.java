@@ -10,6 +10,8 @@ import weka.core.converters.*;
 import weka.classifiers.trees.*;
 import weka.filters.*;
 import weka.classifiers.Evaluation;
+import weka.filters.supervised.attribute.AttributeSelection;
+import weka.filters.unsupervised.attribute.Normalize;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -31,15 +33,31 @@ public class TCMain {
         Instances trainData = Util.getWekaInstances(trainDir);
         Instances testData = Util.getWekaInstances(testDir);
         Instances extraData = Util.getWekaInstances(extraDir);
+        trainData.setClassIndex(trainData.numAttributes() - 1);
+        testData.setClassIndex(testData.numAttributes() - 1);
+        Filter idfFilter = Util.getIDFFilter();
+        idfFilter.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, idfFilter);
+        extraData = Filter.useFilter(extraData, idfFilter);
+        testData = Filter.useFilter(testData, idfFilter);
+        AttributeSelection reduceDimFilter = Util.getReduceDimFilter("CA");
+        reduceDimFilter.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, reduceDimFilter);
+        extraData = Filter.useFilter(extraData, reduceDimFilter);
+        testData = Filter.useFilter(testData, reduceDimFilter);
+        Normalize normalize = new Normalize();
+        normalize.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, normalize);
+        extraData = Filter.useFilter(extraData, normalize);
+        testData = Filter.useFilter(testData, normalize);
+
 
         //构造分类器
         ArrayList<Classifier> classifiers = new ArrayList<Classifier>();
         classifiers.add(Util.buildClassifier("single", "svm", trainData, extraData));
-        classifiers.add(Util.buildClassifier("single", "knn", trainData, extraData));
-        classifiers.add(Util.buildClassifier("single", "nb", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("single", "knn", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("single", "nb", trainData, extraData));
         //classifiers.add(Util.buildClassifier("ensemble", "knn,nb,svm", trainData, extraData));
-
-
 
 
         //评估
@@ -49,7 +67,8 @@ public class TCMain {
             //SerializationHelper.write("/Users/pishilong/Workspace/tc/models/model_" + index, classifier);
             Evaluation evaluation = new Evaluation(trainData);
             evaluation.evaluateModel(classifier, testData);
-            //System.out.println(evaluation.toClassDetailsString());
+            Util.printResult(classifier, trainData.classAttribute(), testData, "test_weka.doc.list");
+            System.out.println(evaluation.toClassDetailsString());
             System.out.println("Macro F1: " + evaluation.unweightedMacroFmeasure());
             System.out.println("Micro F1: " + evaluation.unweightedMicroFmeasure());
         }

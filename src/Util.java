@@ -1,18 +1,22 @@
 import weka.classifiers.Classifier;
-import weka.classifiers.UpdateableClassifier;
 import weka.classifiers.bayes.NaiveBayes;
 import weka.classifiers.functions.SMO;
 import weka.classifiers.lazy.IBk;
 import weka.classifiers.meta.FilteredClassifier;
 import weka.classifiers.meta.Vote;
+import weka.core.Utils.*;
+import weka.core.stemmers.SnowballStemmer;
+import weka.filters.Filter;
+import weka.filters.supervised.attribute.AttributeSelection;
 import weka.core.*;
 import weka.core.converters.TextDirectoryLoader;
-import weka.filters.Filter;
 import weka.filters.unsupervised.attribute.StringToWordVector;
-import weka.core.stopwords.StopwordsHandler;
 import weka.core.stopwords.WordsFromFile;
+import weka.attributeSelection.*;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.nio.channels.*;
@@ -130,7 +134,21 @@ public class Util {
         Instances result;
         TextDirectoryLoader loader = new TextDirectoryLoader();
         loader.setDirectory(dataDir);
+        loader.setOutputFilename(true);
         result = loader.getDataSet();
+        File docList = new File("/Users/pishilong/Workspace/tc/dataset/" + dataDir.getName() + ".doc.list");
+        if (!docList.exists()) docList.createNewFile();
+        BufferedWriter output = new BufferedWriter(new FileWriter(docList));
+        Enumeration enumeration = result.attribute(1).enumerateValues();
+        for (; enumeration.hasMoreElements();){
+            String fileName = (String)enumeration.nextElement();
+            if (fileName.matches("\\d+/\\d+")){
+                output.write(fileName.split("/")[1]);
+                output.newLine();
+            }
+        }
+        output.flush();
+        output.close();
 
         return result;
     }
@@ -141,18 +159,21 @@ public class Util {
         StringToWordVector filter = new StringToWordVector();
         filter.setIDFTransform(true);
         filter.setTFTransform(false);
-        filter.setWordsToKeep(1000);
+        filter.setWordsToKeep(2000);
         filter.setDoNotOperateOnPerClassBasis(true);
         filter.setOutputWordCounts(true);
+        //filter.setStemmer(new weka.core.stemmers.SnowballStemmer());
         filter.setNormalizeDocLength(new SelectedTag(StringToWordVector.FILTER_NORMALIZE_ALL, StringToWordVector.TAGS_FILTER));
+
         File stopWordFile = new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt");
         WordsFromFile stopwordsHandler = new WordsFromFile();
         stopwordsHandler.setStopwords(stopWordFile);
         filter.setStopwordsHandler(stopwordsHandler);
+        //filter.setStopwords(new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt"));
         return filter;
     }
 
-    public static FilteredClassifier getClassifier(String modelName) throws Exception{
+    public static Classifier getClassifier(String modelName) throws Exception{
         FilteredClassifier filteredClassifier = new FilteredClassifier();
         filteredClassifier.setFilter(Util.getIDFFilter());
 
@@ -167,6 +188,9 @@ public class Util {
                 break;
             case "svm":
                 classifier = new SMO();
+                //((SMO)classifier).setKernel(new weka.classifiers.functions.supportVector.RBFKernel());
+                //System.out.println(((SMO)classifier).getKernel());
+                //((SMO)classifier).setC(10000);
                 break;
             default:
                 classifier = new SMO();
@@ -175,7 +199,7 @@ public class Util {
 
         filteredClassifier.setClassifier(classifier);
 
-        return filteredClassifier;
+        return classifier;
     }
 
     // typeName : single, ensemble
@@ -184,7 +208,7 @@ public class Util {
         System.out.println("开始构建分类器:" + typeName + "\t" + modelName);
         if(typeName == "single"){
             Classifier classifier = getClassifier(modelName);
-            classifier = trainWithExtraData(classifier, trainData, extraData);
+            classifier = trainModel(classifier, trainData, extraData);
             return classifier;
         }else{
             String[] modelNames = modelName.split(",");
@@ -210,16 +234,14 @@ public class Util {
             vote.setClassifiers(cfsArray);
             //设置随机数种子
             vote.setSeed(2);
-            vote = (Vote)trainWithExtraData(vote, trainData, extraData);
+            vote = (Vote) trainModel(vote, trainData, extraData);
             //训练ensemble分类器
             return vote;
         }
     }
 
     public static Classifier trainWithExtraData(Classifier classifier, Instances trainData, Instances extraData) throws Exception {
-        System.out.println("开始训练初始分类器");
-        classifier.buildClassifier(trainData);
-        /* 每次都重新训练分类器
+         /* 每次都重新训练分类器
         int index = 1;
         for(Instance data : extraData){
             double label = classifier.classifyInstance(data);
@@ -232,9 +254,11 @@ public class Util {
         System.out.println("分类器训练完毕");
         */
         //只最后重新训练一次
+
         int index = 1;
         for(Instance data : extraData){
-            double label = classifier.classifyInstance(data);
+            int label = (int)classifier.classifyInstance(data);
+            //System.out.println(trainData.classAttribute().value(label));
             data.setClassValue(label);
             trainData.add(data);
             //System.out.println("分类第" + index + "个无标数据，并将其加入训练数据中");
@@ -243,7 +267,94 @@ public class Util {
         System.out.println("无标数据分类完毕，并添加入训练数据中");
         classifier.buildClassifier(trainData);
         System.out.println("分类器重新训练完毕");
+
         return classifier;
+    }
+
+
+    public static Classifier trainModel(Classifier classifier, Instances trainData, Instances extraData) throws Exception {
+        System.out.println("开始训练初始分类器");
+        classifier.buildClassifier(trainData);
+        classifier = trainWithExtraData(classifier, trainData, extraData);
+        return classifier;
+    }
+
+    public static AttributeSelection getReduceDimFilter(String methodName) throws Exception{
+        AttributeSelection filter = new AttributeSelection();
+        Ranker ranker = new Ranker();
+        ranker.setNumToSelect(700);
+        GreedyStepwise search = new GreedyStepwise();
+        search.setSearchBackwards(true);
+        search.setNumToSelect(700);
+        switch (methodName){
+            case "PCA":
+                PrincipalComponents pca = new PrincipalComponents();
+                filter.setEvaluator(pca);
+                filter.setSearch(ranker);
+                break;
+            case "IG":
+                filter.setEvaluator(new InfoGainAttributeEval());
+                filter.setSearch(ranker);
+                break;
+            case "CFS":
+                filter.setEvaluator(new weka.attributeSelection.CfsSubsetEval());
+                search = new GreedyStepwise();
+                filter.setSearch(search);
+                break;
+            case "Chi":
+                filter.setEvaluator(new weka.attributeSelection.ChiSquaredAttributeEval());
+                filter.setSearch(ranker);
+                break;
+            case "SVM":
+                filter.setEvaluator(new weka.attributeSelection.SVMAttributeEval());
+                filter.setSearch(ranker);
+                break;
+            case "LSI":
+                filter.setEvaluator(new weka.attributeSelection.LatentSemanticAnalysis());
+                filter.setSearch(ranker);
+                break;
+            case "GR":
+                filter.setEvaluator(new weka.attributeSelection.GainRatioAttributeEval());
+                filter.setSearch(ranker);
+                break;
+            case "CA":
+                filter.setEvaluator(new weka.attributeSelection.CorrelationAttributeEval());
+                filter.setSearch(ranker);
+                break;
+            default:
+                break;
+        }
+
+
+        return filter;
+    }
+
+    public static void printResult(Classifier classifier,
+                                   Attribute classAttribute,
+                                   Instances testData,
+                                   String docListFile) throws Exception{
+        File resultFile = new File("/Users/pishilong/Workspace/tc/result.list");
+        if(!resultFile.exists()) resultFile.createNewFile();
+        BufferedWriter output = new BufferedWriter(new FileWriter(resultFile));
+
+        File listFile = new File("/Users/pishilong/Workspace/tc/dataset/" + docListFile);
+        BufferedReader reader = new BufferedReader(new FileReader(listFile));
+        ArrayList<String> docList = new ArrayList<>();
+        String tempString;
+        while ((tempString = reader.readLine()) != null) {
+            docList.add(tempString);
+        }
+        reader.close();
+
+        for(Instance instance: testData){
+            String labelName = classAttribute.value((int) classifier.classifyInstance(instance));
+            String fileName = docList.get(testData.indexOf(instance));
+            //String correctClass = classAttribute.value((int) instance.classValue());
+            //output.write(fileName + "\t" + correctClass + "\t" + labelName + "\r\n");
+            output.write(fileName + "\t" + labelName + "\r\n");
+        }
+        output.flush();
+        output.close();
     }
 
     public static void main(String[] args) throws Exception {
@@ -251,7 +362,15 @@ public class Util {
         //File labelFile = new File("/Users/pishilong/Workspace/tc/dataset/train.doc.label");
         //loadLabelFile(labelFile);
         // 测试refactorDataDirector
-        File trainDirector = new File("/Users/pishilong/Workspace/tc/dataset/train");
-        refactorDataDirector(trainDirector);
+        File trainDir = new File("/Users/pishilong/Workspace/tc/dataset/train");
+        trainDir = refactorDataDirector(trainDir);
+        Instances trainData = Util.getWekaInstances(trainDir);
+        Filter idfFilter = Util.getIDFFilter();
+        idfFilter.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, idfFilter);
+        Filter reduceDimFilter = Util.getReduceDimFilter("PCA");
+        reduceDimFilter.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, reduceDimFilter);
+
     }
 }
