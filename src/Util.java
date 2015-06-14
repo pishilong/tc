@@ -1,9 +1,14 @@
 import weka.classifiers.Classifier;
 import weka.classifiers.bayes.NaiveBayes;
+import weka.classifiers.functions.MultilayerPerceptron;
 import weka.classifiers.functions.SMO;
 import weka.classifiers.lazy.IBk;
+import weka.classifiers.meta.AdaBoostM1;
+import weka.classifiers.meta.Bagging;
 import weka.classifiers.meta.FilteredClassifier;
 import weka.classifiers.meta.Vote;
+import weka.classifiers.trees.J48;
+import weka.classifiers.trees.RandomForest;
 import weka.core.Utils.*;
 import weka.core.stemmers.SnowballStemmer;
 import weka.filters.Filter;
@@ -142,7 +147,7 @@ public class Util {
         Enumeration enumeration = result.attribute(1).enumerateValues();
         for (; enumeration.hasMoreElements();){
             String fileName = (String)enumeration.nextElement();
-            if (fileName.matches("\\d+/\\d+")){
+            if (fileName.matches("\\d+/\\d+") || fileName.matches("\\?/\\d+")){
                 output.write(fileName.split("/")[1]);
                 output.newLine();
             }
@@ -162,14 +167,14 @@ public class Util {
         filter.setWordsToKeep(2000);
         filter.setDoNotOperateOnPerClassBasis(true);
         filter.setOutputWordCounts(true);
-        //filter.setStemmer(new weka.core.stemmers.SnowballStemmer());
+        filter.setStemmer(new weka.core.stemmers.SnowballStemmer());
         filter.setNormalizeDocLength(new SelectedTag(StringToWordVector.FILTER_NORMALIZE_ALL, StringToWordVector.TAGS_FILTER));
 
         File stopWordFile = new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt");
         WordsFromFile stopwordsHandler = new WordsFromFile();
         stopwordsHandler.setStopwords(stopWordFile);
-        filter.setStopwordsHandler(stopwordsHandler);
-        //filter.setStopwords(new File("/Users/pishilong/Workspace/tc/dataset/stopword.txt"));
+        //filter.setStopwordsHandler(stopwordsHandler);
+        filter.setStopwordsHandler(new weka.core.stopwords.Rainbow());
         return filter;
     }
 
@@ -189,8 +194,16 @@ public class Util {
             case "svm":
                 classifier = new SMO();
                 //((SMO)classifier).setKernel(new weka.classifiers.functions.supportVector.RBFKernel());
-                //System.out.println(((SMO)classifier).getKernel());
-                //((SMO)classifier).setC(10000);
+                System.out.println(((SMO)classifier).getKernel());
+                //((SMO)classifier).setC(1);
+                break;
+            case "ann":
+                classifier = new MultilayerPerceptron();
+               // ((MultilayerPerceptron)classifier)
+                break;
+            case "j48":
+                classifier = new J48();
+                //((J48)classifier).se
                 break;
             default:
                 classifier = new SMO();
@@ -210,7 +223,7 @@ public class Util {
             Classifier classifier = getClassifier(modelName);
             classifier = trainModel(classifier, trainData, extraData);
             return classifier;
-        }else{
+        }else if (typeName == "ensemble"){
             String[] modelNames = modelName.split(",");
             Classifier[] cfsArray = new Classifier[modelNames.length];
             int index = 0;
@@ -237,6 +250,21 @@ public class Util {
             vote = (Vote) trainModel(vote, trainData, extraData);
             //训练ensemble分类器
             return vote;
+        }else if (typeName == "AdaBoost"){
+            AdaBoostM1 boost = new AdaBoostM1();
+            boost.setClassifier(Util.getClassifier(modelName));
+            boost.setNumIterations(20);
+            boost = (AdaBoostM1)trainModel(boost, trainData, extraData);
+            return boost;
+        } else if (typeName == "Bagging"){
+            Bagging bagging = new Bagging();
+            bagging.setClassifier(getClassifier(modelName));
+            bagging.setNumIterations(25);
+            bagging = (Bagging)trainModel(bagging, trainData, extraData);
+            return bagging;
+        }
+        else{
+            return null;
         }
     }
 
@@ -275,7 +303,7 @@ public class Util {
     public static Classifier trainModel(Classifier classifier, Instances trainData, Instances extraData) throws Exception {
         System.out.println("开始训练初始分类器");
         classifier.buildClassifier(trainData);
-        classifier = trainWithExtraData(classifier, trainData, extraData);
+        //classifier = trainWithExtraData(classifier, trainData, extraData);
         return classifier;
     }
 
@@ -349,8 +377,8 @@ public class Util {
         for(Instance instance: testData){
             String labelName = classAttribute.value((int) classifier.classifyInstance(instance));
             String fileName = docList.get(testData.indexOf(instance));
-            //String correctClass = classAttribute.value((int) instance.classValue());
-            //output.write(fileName + "\t" + correctClass + "\t" + labelName + "\r\n");
+            String correctClass = classAttribute.value((int) instance.classValue());
+            output.write(fileName + "\t" + correctClass + "\t" + labelName + "\r\n");
             output.write(fileName + "\t" + labelName + "\r\n");
         }
         output.flush();

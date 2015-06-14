@@ -40,24 +40,34 @@ public class TCMain {
         trainData = Filter.useFilter(trainData, idfFilter);
         extraData = Filter.useFilter(extraData, idfFilter);
         testData = Filter.useFilter(testData, idfFilter);
-        AttributeSelection reduceDimFilter = Util.getReduceDimFilter("CA");
-        reduceDimFilter.setInputFormat(trainData);
-        trainData = Filter.useFilter(trainData, reduceDimFilter);
-        extraData = Filter.useFilter(extraData, reduceDimFilter);
-        testData = Filter.useFilter(testData, reduceDimFilter);
+        AttributeSelection featureSelector = Util.getReduceDimFilter("CA");
+        featureSelector.setInputFormat(trainData);
+        trainData = Filter.useFilter(trainData, featureSelector);
+        extraData = Filter.useFilter(extraData, featureSelector);
+        testData = Filter.useFilter(testData, featureSelector);
         Normalize normalize = new Normalize();
         normalize.setInputFormat(trainData);
         trainData = Filter.useFilter(trainData, normalize);
         extraData = Filter.useFilter(extraData, normalize);
         testData = Filter.useFilter(testData, normalize);
 
+        //最终需要把test数据集也加入训练数据之中
+       /*
+        for (Instance instance : testData){
+            trainData.add(instance);
+        }
+        */
 
         //构造分类器
         ArrayList<Classifier> classifiers = new ArrayList<Classifier>();
         classifiers.add(Util.buildClassifier("single", "svm", trainData, extraData));
         //classifiers.add(Util.buildClassifier("single", "knn", trainData, extraData));
         //classifiers.add(Util.buildClassifier("single", "nb", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("single", "j48", trainData, extraData));
         //classifiers.add(Util.buildClassifier("ensemble", "knn,nb,svm", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("ensemble", "knn,nb,j48", trainData, extraData));
+        classifiers.add(Util.buildClassifier("AdaBoost", "svm", trainData, extraData));
+        classifiers.add(Util.buildClassifier("Bagging", "svm", trainData, extraData));
 
 
         //评估
