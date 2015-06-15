@@ -27,29 +27,39 @@ public class TCMain {
         //重新组织数据集目录
         testDir = Util.refactorDataDirector(testDir);
 
-        File extraDir = new File("/Users/pishilong/Workspace/tc/dataset/extra");
+        BufferedReader reader = new BufferedReader(
+                new FileReader("/Users/pishilong/Workspace/tc/dataset/extra.arff"));
+
+
 
         //预处理数据
         Instances trainData = Util.getWekaInstances(trainDir);
         Instances testData = Util.getWekaInstances(testDir);
-        Instances extraData = Util.getWekaInstances(extraDir);
+        Instances extraData = new Instances(new BufferedReader(
+                new FileReader("/Users/pishilong/Workspace/tc/dataset/extra.arff")));
+
         trainData.setClassIndex(trainData.numAttributes() - 1);
         testData.setClassIndex(testData.numAttributes() - 1);
+        //extraData.setClassIndex(extraData.numAttributes() - 1);
         Filter idfFilter = Util.getIDFFilter();
         idfFilter.setInputFormat(trainData);
         trainData = Filter.useFilter(trainData, idfFilter);
-        extraData = Filter.useFilter(extraData, idfFilter);
         testData = Filter.useFilter(testData, idfFilter);
+        idfFilter.setInputFormat(extraData);
+        extraData = Filter.useFilter(extraData, idfFilter);
+
         AttributeSelection featureSelector = Util.getReduceDimFilter("CA");
         featureSelector.setInputFormat(trainData);
         trainData = Filter.useFilter(trainData, featureSelector);
-        extraData = Filter.useFilter(extraData, featureSelector);
         testData = Filter.useFilter(testData, featureSelector);
+        featureSelector.setInputFormat(extraData);
+        extraData = Filter.useFilter(extraData, featureSelector);
         Normalize normalize = new Normalize();
         normalize.setInputFormat(trainData);
         trainData = Filter.useFilter(trainData, normalize);
-        extraData = Filter.useFilter(extraData, normalize);
         testData = Filter.useFilter(testData, normalize);
+        normalize.setInputFormat(extraData);
+        extraData = Filter.useFilter(extraData, normalize);
 
         //最终需要把test数据集也加入训练数据之中
        /*
@@ -66,8 +76,8 @@ public class TCMain {
         //classifiers.add(Util.buildClassifier("single", "j48", trainData, extraData));
         //classifiers.add(Util.buildClassifier("ensemble", "knn,nb,svm", trainData, extraData));
         //classifiers.add(Util.buildClassifier("ensemble", "knn,nb,j48", trainData, extraData));
-        classifiers.add(Util.buildClassifier("AdaBoost", "svm", trainData, extraData));
-        classifiers.add(Util.buildClassifier("Bagging", "svm", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("AdaBoost", "svm", trainData, extraData));
+        //classifiers.add(Util.buildClassifier("Bagging", "svm", trainData, extraData));
 
 
         //评估

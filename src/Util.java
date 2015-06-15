@@ -1,5 +1,7 @@
 import weka.classifiers.Classifier;
 import weka.classifiers.bayes.NaiveBayes;
+import weka.classifiers.collective.CollectiveClassifier;
+import weka.classifiers.collective.meta.*;
 import weka.classifiers.functions.MultilayerPerceptron;
 import weka.classifiers.functions.SMO;
 import weka.classifiers.lazy.IBk;
@@ -8,8 +10,11 @@ import weka.classifiers.meta.Bagging;
 import weka.classifiers.meta.FilteredClassifier;
 import weka.classifiers.meta.Vote;
 import weka.classifiers.trees.J48;
+import weka.clusterers.EM;
 import weka.classifiers.trees.RandomForest;
+import weka.clusterers.SimpleKMeans;
 import weka.core.Utils.*;
+import weka.core.converters.ArffSaver;
 import weka.core.stemmers.SnowballStemmer;
 import weka.filters.Filter;
 import weka.filters.supervised.attribute.AttributeSelection;
@@ -141,6 +146,8 @@ public class Util {
         loader.setDirectory(dataDir);
         loader.setOutputFilename(true);
         result = loader.getDataSet();
+
+        //打印文件名
         File docList = new File("/Users/pishilong/Workspace/tc/dataset/" + dataDir.getName() + ".doc.list");
         if (!docList.exists()) docList.createNewFile();
         BufferedWriter output = new BufferedWriter(new FileWriter(docList));
@@ -282,7 +289,7 @@ public class Util {
         System.out.println("分类器训练完毕");
         */
         //只最后重新训练一次
-
+        /*
         int index = 1;
         for(Instance data : extraData){
             int label = (int)classifier.classifyInstance(data);
@@ -295,6 +302,46 @@ public class Util {
         System.out.println("无标数据分类完毕，并添加入训练数据中");
         classifier.buildClassifier(trainData);
         System.out.println("分类器重新训练完毕");
+        */
+
+        System.out.println("使用EM算法对无标数据进行聚类");
+        EM em = new EM();
+        em.buildClusterer(extraData);
+        HashMap<Integer, ArrayList<Instance>> map = new HashMap<>();
+
+        for (Instance instance : extraData){
+            int clusterID = em.clusterInstance(instance);
+            ArrayList<Instance> list = map.get(clusterID);
+            list.add(instance);
+        }
+
+        //遍历每一个聚类
+        for (Map.Entry<Integer, ArrayList<Instance>> entry : map.entrySet()) {
+            int clusterID = entry.getKey();
+            //分类每个实例，记录每个类别的得票
+            ArrayList<Instance> instances = entry.getValue();
+            HashMap<Integer, Integer> voteMap = new HashMap<Integer, Integer>();
+            for (Instance instance : instances){
+                int labelValue = (int)classifier.classifyInstance(instance);
+                voteMap.put(labelValue, voteMap.get(labelValue) + 1);
+            }
+
+            // 找到得票最多的类标，赋予每个实例，并加入训练数据集之中
+            int maxNum = Integer.MIN_VALUE;
+            int labelValue = 0;
+            for (Map.Entry<Integer, Integer> labelEntry : voteMap.entrySet()){
+                if (labelEntry.getValue() > maxNum){
+                    labelValue = labelEntry.getKey();
+                    maxNum = labelEntry.getValue();
+                }
+            }
+            for (Instance instance : instances){
+                instance.setClassValue(labelValue);
+                trainData.add(instance);
+            }
+        }
+
+        classifier.buildClassifier(trainData);
 
         return classifier;
     }
@@ -303,7 +350,7 @@ public class Util {
     public static Classifier trainModel(Classifier classifier, Instances trainData, Instances extraData) throws Exception {
         System.out.println("开始训练初始分类器");
         classifier.buildClassifier(trainData);
-        //classifier = trainWithExtraData(classifier, trainData, extraData);
+        classifier = trainWithExtraData(classifier, trainData, extraData);
         return classifier;
     }
 
